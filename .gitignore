@@ -2,5 +2,7 @@
 .idea/*
 *.iml/
 data/*
+models/*
 !data/README.md
 !data/mnist/README.md
+!models/README.md
