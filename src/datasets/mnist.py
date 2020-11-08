@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
 
-from .interface import DataSetI
-
 
 def get_image_at_id(frame: pd.DataFrame, index: int) -> np.array:
     """Retrieve image at given index from MNIST DataFrame"""
