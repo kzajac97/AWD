@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from .interface import DataSetI
+
 
 def get_image_at_id(frame: pd.DataFrame, index: int) -> np.array:
     """Retrieve image at given index from MNIST DataFrame"""
@@ -16,6 +18,8 @@ class MNISTDataSet:
         """
         :param data_set: pandas DataFrame with MNIST images
         """
+        super().__init__()
+
         self.features = data_set.loc[:, "pixel0": "pixel783"]
         self.labels = data_set["label"]
         self.n_data_points = data_set.index.size
@@ -54,8 +58,7 @@ class MNISTDataSet:
 
         return self._prepare_images(samples), np.ones((size, 1))
 
-    @staticmethod
-    def latent_batch(size: int = 32, latent_dim: int = 100) -> np.array:
+    def latent_batch(self, size: int = 32, latent_dim: int = 100) -> np.array:
         """
         :param size: number of images
         :param latent_dim: dimension of latent random distribution
