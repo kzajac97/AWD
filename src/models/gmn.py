@@ -41,7 +41,7 @@ class GenerativeMatchingNetwork:
         :param beta: parameter used by optimizer
         :param loss: loss function used during fitting the model
         """
-        self._model.compile(optimizer=tf.keras.optimizers.Adam(lr=learning_rate, beta_1=beta))
+        self._model.compile(optimizer=tf.keras.optimizers.Adam(lr=learning_rate, beta_1=beta), loss=loss)
 
     def fit(self, data_set: DataSetI, n_epochs: int, batch_size: int = 256, silent: bool = False) -> None:
         """
