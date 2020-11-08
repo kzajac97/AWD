@@ -58,7 +58,7 @@ def build_mnist_gan(generator, discriminator):
     return model
 
 
-def fit(
+def fit_generative_model(
     model: tf.keras.Model,
     generator: tf.keras.Model,
     discriminator: tf.keras.Model,
