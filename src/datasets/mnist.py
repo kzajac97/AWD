@@ -2,6 +2,11 @@ import numpy as np
 import pandas as pd
 
 
+def get_image_at_id(frame: pd.DataFrame, index: int) -> np.array:
+    """Retrieve image at given index from MNIST DataFrame"""
+    return frame.loc[index, "pixel0": "pixel783"].values.reshape(28, 28)
+
+
 class MNISTDataSet:
     """
     Class holds MNIST data set generator implementation
@@ -49,7 +54,8 @@ class MNISTDataSet:
 
         return self._prepare_images(samples), np.ones((size, 1))
 
-    def latent_batch(self, size: int = 32, latent_dim: int = 100) -> np.array:
+    @staticmethod
+    def latent_batch(size: int = 32, latent_dim: int = 100) -> np.array:
         """
         :param size: number of images
         :param latent_dim: dimension of latent random distribution
