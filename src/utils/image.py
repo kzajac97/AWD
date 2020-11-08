@@ -5,7 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-def show_generated_batch(images: List[np.array]) -> None:
+def show_batch(images: List[np.array]) -> None:
     """Show batch of images with 2 rows and 4 columns"""
     figure, axes = plt.subplots(2, 4, figsize=[16, 8])
 

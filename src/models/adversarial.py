@@ -47,18 +47,7 @@ def build_mnist_generator(latent_dim: int = 100) -> tf.keras.Sequential:
     return model
 
 
-def build_mnist_gan(generator, discriminator):
-    discriminator.trainable = False
-
-    model = tf.keras.Sequential([generator, discriminator, ])
-
-    adam = tf.keras.optimizers.Adam(lr=0.0002, beta_1=0.5)
-    model.compile(loss="binary_crossentropy", optimizer=adam)
-
-    return model
-
-
-def fit_generative_model(
+def adversarial_fit(
     model: tf.keras.Model,
     generator: tf.keras.Model,
     discriminator: tf.keras.Model,
