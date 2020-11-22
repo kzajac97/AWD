@@ -10,19 +10,29 @@ from tqdm import tqdm as progress_bar
 from src.utils import read_image_as_tensor, tensor_to_image
 
 
-def feature_reconstruction_loss(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
-    """Reconstruction loss computed as a difference between"""
-    return tf.reduce_sum(tf.square(y_pred - y_true))
-
-
-def total_variation_loss(tensor):
+def feature_reconstruction_loss(base_image: tf.Tensor, generated_image: tf.Tensor) -> float:
     """
-    Reduces variation between neighboring pixels
-    Required for a smooth image
+    Compute reconstruction loss measuring how similar generated image is to anchor image
+
+    :param base_image: image with content representation
+    :param generated_image: image generated during style transfer
+
+    :return: values with measure of content similarity between images
+    """
+    return tf.reduce_sum(tf.square(generated_image - base_image))
+
+
+def smoothness_loss(image: tf.Tensor) -> float:
+    """
+    Reduces variation between neighboring pixels required for a smooth image
+
+    :param image: image represented as tensor of pixel intensities
+
+    :returns: values measuring the overall smoothness of the image
     """
     return tf.reduce_sum(
-        tf.square(tensor[:, :-1, :-1, :] - tensor[:, 1:, :-1, :])
-        + tf.square(tensor[:, :-1, :-1, :] - tensor[:, :-1, 1:, :])
+        tf.square(image[:, :-1, :-1, :] - image[:, 1:, :-1, :])
+        + tf.square(image[:, :-1, :-1, :] - image[:, :-1, 1:, :])
     )
 
 
@@ -38,34 +48,49 @@ def gram_matrix(matrix: tf.Tensor) -> tf.Tensor:
     return tf.tensordot(values, tf.transpose(values), axes=1)
 
 
-def style_reconstruction_loss(base, output):
+def style_reconstruction_loss(base_image, generated_image) -> float:
     """
     Compute reconstruction loss, function outputs small values when image
     is similar to used style image in terms of linearly independent features
+
+    :param base_image:  image with content representation
+    :param generated_image: image generated during style transfer
+
+    :returns: value with a measure of how much given image fit to given style
     """
-    height, width = int(base.shape[0]), int(base.shape[1])
-    alpha = 1.0 / float((2*height*width)**2)
+    height = int(base_image.shape[0])
+    width = int(base_image.shape[1])
+    pixel_weight = 1.0 / np.power(2 * height * width, 2)
 
-    return alpha * tf.reduce_sum(tf.square(gram_matrix(output) - gram_matrix(base)))
+    return pixel_weight * tf.reduce_sum(tf.square(gram_matrix(generated_image) - gram_matrix(base_image)))
 
 
-def style_loss_for_all_layers(style_layers, style_weights, layer_to_output_mapping):
-    temp_style_loss = K.variable(0.0)  # we update this variable in the loop
+def style_loss_for_all_layers(style_layers: tuple, style_weights: tuple, layer_to_output_mapping):
+    """
+    Compute style loss for all used style layers
+
+    :param style_layers: keys of layers used as style layers from VGG model
+    :param style_weights: weights of each style layer
+    :param layer_to_output_mapping: mapping between layer key and output tensor
+
+    :return: aggregated style_reconstruction_loss for all layers
+    """
+    style_loss = K.variable(0.0)  # we update this variable in the loop
     weight = 1.0 / float(len(style_layers))
 
     for index, layer in enumerate(style_layers):
         # extract features of given layer
         style_features = layer_to_output_mapping[layer]
-        # from those features, extract style and output activations
+        # from those features, extract style and output values
         style_image_features = style_features[1, :, :, :]  # 1 corresponds to style image
-        output_style_features = style_features[2, :, :, :]  # 2 coresponds to generated image
-        temp_style_loss.assign_add(
+        output_style_features = style_features[2, :, :, :]  # 2 corresponds to generated image
+        style_loss.assign_add(
             style_weights[index]
             * weight
             * style_reconstruction_loss(style_image_features, output_style_features)
         )
 
-    return temp_style_loss
+    return style_loss
 
 
 def style_transfer(
@@ -75,27 +100,26 @@ def style_transfer(
     n_epochs: int,
     content_weight: float = 3e-2,
     style_weights: tuple = (20000, 500, 12, 1, 1),
-    tv_weight: float = 5e-2,
+    smoothness_weight: float = 5e-2,
     content_layer: str = "block4_conv2",
     style_layers: tuple = ("block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"),
     save_frequency: int = None,
 ):
 
     width, height = tf.keras.preprocessing.image.load_img(content_image_path).size
-    new_dims = (height, width)
     save_frequency = save_frequency or n_epochs
 
     # Preprocess content and style images. Resizes the style image if needed.
-    content_img = K.variable(read_image_as_tensor(content_image_path, new_dims))
-    style_img = K.variable(read_image_as_tensor(style_image_path, new_dims))
+    content_image = K.variable(read_image_as_tensor(content_image_path, (height, width)))
+    style_image = K.variable(read_image_as_tensor(style_image_path, (height, width)))
 
     # Create an output placeholder with desired shape.
     # It will correspond to the generated image after minimizing the loss function.
-    output_img = K.placeholder((1, height, width, 3))
+    generated_image = K.placeholder((1, height, width, 3))
 
     # Combine the 3 images into a single Keras tensor, for ease of manipulation
     # The first dimension of a tensor identifies the example/input.
-    input_img = K.concatenate([content_img, style_img, output_img], axis=0)
+    input_img = K.concatenate([content_image, style_image, generated_image], axis=0)
 
     model = tf.keras.applications.vgg19.VGG19(input_tensor=input_img, weights='imagenet', include_top=False)
 
@@ -108,7 +132,7 @@ def style_transfer(
 
     # Extract the activations of the base image and the output image
     base_image_features = content_features[0, :, :, :]  # 0 corresponds to base
-    combination_features = content_features[2, :, :, :]  # 2 coresponds to output
+    combination_features = content_features[2, :, :, :]  # 2 corresponds to generated
 
     # Calculate the feature reconstruction loss
     content_loss = content_weight * feature_reconstruction_loss(base_image_features, combination_features)
@@ -118,30 +142,27 @@ def style_transfer(
     # Extract as function
     style_loss = style_loss_for_all_layers(style_layers, style_weights, layer_to_output_mapping)
     # Compute total variational loss.
-    tv_loss = tv_weight * total_variation_loss(output_img)
+    smoothness = smoothness_weight * smoothness_loss(generated_image)
     # Composite loss
-    total_loss = content_loss + style_loss + tv_loss
+    total_loss = content_loss + style_loss + smoothness
 
     # Compute gradients of output img with respect to total_loss
-    grads = K.gradients(total_loss, output_img)
+    grads = K.gradients(total_loss, generated_image)
     outputs = [total_loss] + grads
-    loss_and_grads = K.function([output_img], outputs)
+    loss_and_grads = K.function([generated_image], outputs)
     # Initialize the generated image from random noise
     x = np.random.uniform(0, 255, (1, height, width, 3)) - 128.
 
-    # Loss function that takes a vectorized input image, for the solver
-    def loss(x):
-        x = x.reshape((1, height, width, 3))  # reshape
-        return loss_and_grads([x])[0]
-
-    # Gradient function that takes a vectorized input image, for the solver
-    def grads(x):
-        x = x.reshape((1, height, width, 3))  # reshape
-        return loss_and_grads([x])[1].flatten().astype('float64')
-
     # Fit over the total iterations
     for epoch in progress_bar(range(n_epochs)):
-        x, min_val, info = fmin_l_bfgs_b(loss, x.flatten(), fprime=grads, maxfun=20)
+        x, min_val, info = fmin_l_bfgs_b(
+            # extract loss function from tf model
+            func=lambda x: loss_and_grads([x.reshape((1, height, width, 3))])[0],
+            x0=x.flatten(),
+            # extract gradients from tf model
+            fprime=lambda x: loss_and_grads([x.reshape((1, height, width, 3))])[1].flatten().astype("float64"),
+            maxfun=20,
+        )
         # save current generated image
         if epoch % save_frequency == 0:
             generated_image = tensor_to_image(x.copy(), width, height)
