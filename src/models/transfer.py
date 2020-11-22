@@ -1,7 +1,10 @@
+import os
+
 import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from scipy.optimize import fmin_l_bfgs_b
+from skimage import io
 from tqdm import tqdm as progress_bar
 
 from src.utils import read_image_as_tensor, tensor_to_image
@@ -66,23 +69,25 @@ def style_loss_for_all_layers(style_layers, style_weights, layer_to_output_mappi
 
 
 def style_transfer(
-        base_img_path,
-        style_img_path,
-        output_img_path,
-        content_weight=3e-2,
-        style_weights=(20000, 500, 12, 1, 1),
-        tv_weight=5e-2,
-        content_layer='block4_conv2',
-        style_layers=('block1_conv1', 'block2_conv1', 'block3_conv1', 'block4_conv1', 'block5_conv1'),
-        iterations=50
+    content_image_path,
+    style_image_path,
+    outputs_dir,
+    n_epochs: int,
+    content_weight: float = 3e-2,
+    style_weights: tuple = (20000, 500, 12, 1, 1),
+    tv_weight: float = 5e-2,
+    content_layer: str = "block4_conv2",
+    style_layers: tuple = ("block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"),
+    save_frequency: int = None,
 ):
 
-    width, height = tf.keras.preprocessing.image.load_img(base_img_path).size
+    width, height = tf.keras.preprocessing.image.load_img(content_image_path).size
     new_dims = (height, width)
+    save_frequency = save_frequency or n_epochs
 
     # Preprocess content and style images. Resizes the style image if needed.
-    content_img = K.variable(read_image_as_tensor(base_img_path, new_dims))
-    style_img = K.variable(read_image_as_tensor(style_img_path, new_dims))
+    content_img = K.variable(read_image_as_tensor(content_image_path, new_dims))
+    style_img = K.variable(read_image_as_tensor(style_image_path, new_dims))
 
     # Create an output placeholder with desired shape.
     # It will correspond to the generated image after minimizing the loss function.
@@ -133,13 +138,13 @@ def style_transfer(
     def grads(x):
         x = x.reshape((1, height, width, 3))  # reshape
         return loss_and_grads([x])[1].flatten().astype('float64')
-    # Fit over the total iterations
 
-    for i in progress_bar(range(iterations)):
+    # Fit over the total iterations
+    for epoch in progress_bar(range(n_epochs)):
         x, min_val, info = fmin_l_bfgs_b(loss, x.flatten(), fprime=grads, maxfun=20)
         # save current generated image
-        if i % 10 == 0:
-            img = tensor_to_image(x.copy(), width, height)
-            fname = output_img_path + '_at_iteration_%d.png' % (i)
+        if epoch % save_frequency == 0:
+            generated_image = tensor_to_image(x.copy(), width, height)
+            io.imsave(os.path.join(outputs_dir, f"generated_image_at_{epoch}_epoch.jpg"), generated_image)
 
-    return img
+    return tensor_to_image(x.copy(), width, height)
