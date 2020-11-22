@@ -105,46 +105,27 @@ def style_transfer(
     style_layers: tuple = ("block1_conv1", "block2_conv1", "block3_conv1", "block4_conv1", "block5_conv1"),
     save_frequency: int = None,
 ):
-
     width, height = tf.keras.preprocessing.image.load_img(content_image_path).size
     save_frequency = save_frequency or n_epochs
 
-    # Preprocess content and style images. Resizes the style image if needed.
     content_image = K.variable(read_image_as_tensor(content_image_path, (height, width)))
     style_image = K.variable(read_image_as_tensor(style_image_path, (height, width)))
+    generated_image = K.placeholder((1, height, width, 3))  # tensor placeholder for generated image
 
-    # Create an output placeholder with desired shape.
-    # It will correspond to the generated image after minimizing the loss function.
-    generated_image = K.placeholder((1, height, width, 3))
-
-    # Combine the 3 images into a single Keras tensor, for ease of manipulation
-    # The first dimension of a tensor identifies the example/input.
-    input_img = K.concatenate([content_image, style_image, generated_image], axis=0)
-
-    model = tf.keras.applications.vgg19.VGG19(input_tensor=input_img, weights='imagenet', include_top=False)
-
-    # Get the symbolic outputs of each "key" layer (they have unique names).
-    # The dictionary outputs an evaluation when the model is fed an input.
+    input_as_tensor = tf.concat([content_image, style_image, generated_image], axis=0)
+    model = tf.keras.applications.vgg19.VGG19(input_tensor=input_as_tensor, weights="imagenet", include_top=False)
     layer_to_output_mapping = {layer.name: layer.output for layer in model.layers}
 
     # Extract features from the content layer
     content_features = layer_to_output_mapping[content_layer]
-
-    # Extract the activations of the base image and the output image
     base_image_features = content_features[0, :, :, :]  # 0 corresponds to base
     combination_features = content_features[2, :, :, :]  # 2 corresponds to generated
 
-    # Calculate the feature reconstruction loss
-    content_loss = content_weight * feature_reconstruction_loss(base_image_features, combination_features)
-
-    # For each style layer compute style loss
-    # The total style loss is the weighted sum of those losses
-    # Extract as function
-    style_loss = style_loss_for_all_layers(style_layers, style_weights, layer_to_output_mapping)
-    # Compute total variational loss.
-    smoothness = smoothness_weight * smoothness_loss(generated_image)
-    # Composite loss
-    total_loss = content_loss + style_loss + smoothness
+    # Compute total loss
+    content_loss_value = content_weight * feature_reconstruction_loss(base_image_features, combination_features)
+    style_loss_value = style_loss_for_all_layers(style_layers, style_weights, layer_to_output_mapping)
+    smoothness_loss_value = smoothness_weight * smoothness_loss(generated_image)
+    total_loss = content_loss_value + style_loss_value + smoothness_loss_value
 
     # Compute gradients of output img with respect to total_loss
     grads = K.gradients(total_loss, generated_image)
@@ -163,7 +144,7 @@ def style_transfer(
             fprime=lambda x: loss_and_grads([x.reshape((1, height, width, 3))])[1].flatten().astype("float64"),
             maxfun=20,
         )
-        # save current generated image
+
         if epoch % save_frequency == 0:
             generated_image = tensor_to_image(x.copy(), width, height)
             io.imsave(os.path.join(outputs_dir, f"generated_image_at_{epoch}_epoch.jpg"), generated_image)
